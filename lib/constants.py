@@ -1,16 +1,15 @@
 SCK = 2
 SER_IN = 3
 RCK = 5
-# not used but declared for good measure
-SER_OUT = 4
 
 ROW_ENABLE_PINS = [
     6, 7, 8, 9, 10, 11, 12, 13
 ]
 
-# Dimming
-FREQ = 1000
-DUTY = 0.125
+# PIO state machine frequency (Hz)
+# 2 instructions per bit → effective SCK = PIO_FREQ / 2
+PIO_FREQ = 2_000_000
+
 
 # for checking array registration
 TEST_PATTERN_32BIT = [

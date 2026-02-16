@@ -1,53 +1,38 @@
-from machine import Pin
-from util import write32
+from util import remap32
 import constants
-import time
+
 
 class LEDMatrix:
-    def __init__(self, spi_bus, latch_pin):
-        self.spi_bus = spi_bus
-        self.latch_pin = latch_pin
+    def __init__(self, data_sm, row_sm):
+        self._data_sm = data_sm
+        self._row_sm = row_sm
+        self._mapped_fb = [0] * 8
+        self._row_patterns = [~(1 << i) & 0xFF for i in range(8)]
+        self._fill_row = 0
 
-        self.rows = [LEDRow(pin) for pin in constants.ROW_ENABLE_PINS]
-        self.num_rows = len(self.rows)
+    def start(self, framebuffer=None):
+        if framebuffer is not None:
+            self._mapped_fb = [remap32(v) for v in framebuffer]
 
-        self.current_row = 0
+        # Pre-fill both FIFOs (4 deep)
+        for i in range(4):
+            self._data_sm.put(self._mapped_fb[i])
+            self._row_sm.put(self._row_patterns[i])
+        self._fill_row = 4
 
-        # Disable all on startup
-        self.disable_all()
+        self._data_sm.active(1)
+        self._row_sm.active(1)
 
-    def disable_all(self):
-        for row in self.rows:
-            row.disable()
+    def stop(self):
+        self._data_sm.active(0)
+        self._row_sm.active(0)
 
-    def scan_once(self, framebuffer):
-        """
-        Call this continuously.
-        framebuffer = list of 8 integers (32-bit)
-        """
+    def set_framebuffer(self, fb):
+        self._mapped_fb = [remap32(v) for v in fb]
 
-        # 1. Disable all rows
-        self.disable_all()
-
-        # 2. Shift next row's data
-        write32(framebuffer[self.current_row],
-                spi=self.spi_bus,
-                latch_pin=self.latch_pin)
-
-        # 3. Enable that row
-        self.rows[self.current_row].enable()
-
-        # 4. Advance row pointer
-        self.current_row = (self.current_row + 1) % self.num_rows
-
-
-class LEDRow:
-    def __init__(self, enable_pin):
-        self.enable_pin = Pin(enable_pin, Pin.OUT)
-        self.disable()
-
-    def enable(self):
-        self.enable_pin.value(0)
-
-    def disable(self):
-        self.enable_pin.value(1)
+    def refill(self):
+        """Call regularly to keep PIO FIFOs fed. Safe to call as often as needed."""
+        while self._data_sm.tx_fifo() < 4 and self._row_sm.tx_fifo() < 4:
+            self._data_sm.put(self._mapped_fb[self._fill_row])
+            self._row_sm.put(self._row_patterns[self._fill_row])
+            self._fill_row = (self._fill_row + 1) % 8
