@@ -6,8 +6,8 @@ PIO-driven 32x8 LED matrix controller for the Raspberry Pi Pico (RP2040), writte
 
 - **MCU:** Raspberry Pi Pico (RP2040)
 - **Display:** 32 columns x 8 rows, 256 LEDs total
-- **Shift registers:** 4x 8-bit SIPO chain (e.g. 74HC595) for column data
-- **Row drivers:** 8 active-low enable lines, accent driven individually
+- **Shift registers:** 4x 8-bit SIPO chain using TLC6C598 LED drivers
+- **Row drivers:** 8 active-low enable lines, multiplexed using 8 GPIO pins from the pico
 
 ### Pin mapping
 
@@ -20,22 +20,22 @@ PIO-driven 32x8 LED matrix controller for the Raspberry Pi Pico (RP2040), writte
 
 ## How it works
 
-The display is multiplexed: one row is lit at a time, cycling fast enough (~760 Hz refresh) to appear fully lit via persistence of vision.
+The display is multiplexed: one row is lit at a time, relying on persistence of vision to make the whole display appear illuminated at the same time..
 
-Two PIO state machines on PIO0 handle all display timing without CPU involvement:
+Multiplexing is handled by two PIO state machines on PIO0 which frees up the CPU to handle other tasks:
 
 - **SM0 (`_shift_out`)** clocks 32 bits of column data into the shift register chain and pulses the latch pin. It waits for SM1's signal before each shift, and signals SM1 when the latch is done.
 - **SM1 (`_row_ctrl`)** disables all rows, signals SM0 to begin shifting, waits for the latch to complete, then enables one row. After a ~128 µs delay (256 PIO cycles), it wraps and repeats for the next row.
 
-The two SMs synchronize via PIO IRQ flags 0 and 1. All display timing is cycle-accurate and independent of Python execution.
+The two SMs synchronize via PIO IRQ flags 0 and 1. All display timing is independent of Python execution which ensures the matrix doesn't flicker.
 
 ### CPU responsibility
 
-Python's only job is keeping the 4-deep TX FIFOs on both SMs fed via `matrix.refill()`. The FIFOs buffer ~660 µs of scan data (4 rows), so `refill()` does not need to be called with precise timing — just often enough that the FIFOs don't drain completely.
+Python's only job is keeping the 4-deep TX FIFOs on both SMs fed via `matrix.refill()`. The FIFOs buffer is replenished with `refill()` and can be called asynchronously — just often enough that the FIFOs don't drain completely.
 
 ### Bit remapping
 
-`remap32()` corrects for some PCB wiring order compromises by reversing the high nibble bits of each byte. It runs once when the framebuffer is set (not in the scan path).
+`remap32()` corrects for some PCB wiring order compromises by reversing the last 4 bits of each byte in the row. It runs once when the framebuffer is set to separate it from scanning logic. .
 
 ## File structure
 
@@ -59,21 +59,20 @@ matrix.start(initial_framebuffer)
 
 while True:
     matrix.refill()
-    # application logic here
+    # logic to refill the framebuffer goes here. 
 ```
 
-A framebuffer is a list of 8 integers, each 32 bits wide (one per row). Update the display at any time with:
+The framebuffer is a list of 8 integers, each 32 bits wide (one per row). Update the display at any time with:
 
 ```python
 matrix.set_framebuffer(new_frame)
 ```
 
-The new frame takes effect on the next scan cycle. Both `set_framebuffer()` and `refill()` run in the main loop, so there are no concurrency concerns.
+The new frame takes effect on the next scan cycle. Both `set_framebuffer()` and `refill()` run in the main loop.
 
 ## Future work
 
-- **Serial frame streaming:** Accept frames over UART in the main loop. Parse incoming bytes into framebuffers and call `set_framebuffer()`. The PIO display runs independently, so serial processing can use the full CPU budget (~660 µs between required `refill()` calls).
-- **DMA FIFO feeding:** Replace `refill()` with DMA transfers from a ring buffer to both SM FIFOs. This would eliminate the last CPU involvement in the display path entirely.
-- **Double buffering:** If `set_framebuffer()` is ever called from an interrupt context (e.g. a UART RX interrupt), a back-buffer/swap pattern would prevent tearing from partial framebuffer updates mid-scan.
-- **Brightness control:** The PIO delay loop constant (`set(x, 7)` in `_row_ctrl`) controls display-on time per row. Reducing it dims the display; a second set of delay cycles after row disable would maintain refresh rate while reducing duty cycle.
-- **Hardware row decoder:** Replacing the 8 row-enable GPIOs with a 3-to-8 decoder (e.g. 74HC138) would free 5 GPIO pins and allow a single PIO SM to handle the entire display.
+- **Serial frame streaming:**
+- **DMA FIFO feeding:**
+- **Double buffering:** 
+- **Brightness control:**
