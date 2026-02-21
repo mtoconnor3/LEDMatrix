@@ -18,21 +18,14 @@ data_sm, row_sm = create_state_machines()
 matrix = LEDMatrix(data_sm, row_sm)
 matrix.start(oldbuffer)
 
-# Both PIO state machines handle display timing autonomously.
-# Main loop just keeps the FIFOs fed and is otherwise free for application logic.
+# DMA feeds both PIO FIFOs automatically — the CPU is completely free.
 
-# For periodically updating the buffer
 now = time.ticks_us()
 while True:
-    
-    # Refill the sm FIFO
-    matrix.refill()
-
     # Flip some bits occasionally
     if time.ticks_diff(time.ticks_us(), now) >= 100000:
-        
         newbuffer = bitwise_and(oldbuffer, random_hex32_list())
         matrix.set_framebuffer(newbuffer)
+        matrix.swap()
         oldbuffer = newbuffer
-        now = time.ticks_us()        
-        
+        now = time.ticks_us()
