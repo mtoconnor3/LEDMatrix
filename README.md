@@ -20,7 +20,7 @@ PIO-driven 32x8 LED matrix controller for the Raspberry Pi Pico (RP2040), writte
 
 ## How it works
 
-The display is multiplexed: one row is lit at a time, relying on persistence of vision to make the whole display appear illuminated at the same time..
+The display is multiplexed: one row is lit at a time, relying on persistence of vision to make the whole display appear illuminated at the same time.
 
 Multiplexing is handled by two PIO state machines on PIO0 which frees up the CPU to handle other tasks:
 
@@ -29,13 +29,13 @@ Multiplexing is handled by two PIO state machines on PIO0 which frees up the CPU
 
 The two SMs synchronize via PIO IRQ flags 0 and 1. All display timing is independent of Python execution which ensures the matrix doesn't flicker.
 
-### CPU responsibility
+### DMA double-buffering
 
-Python's only job is keeping the 4-deep TX FIFOs on both SMs fed via `matrix.refill()`. The FIFOs buffer is replenished with `refill()` and can be called asynchronously — just often enough that the FIFOs don't drain completely.
+Two DMA channels continuously feed the PIO TX FIFOs from a 32-byte-aligned framebuffer using ring-wrapped reads — the CPU never touches the FIFOs. A second (back) buffer lets Python prepare the next frame while the current one is being scanned out. Calling `swap()` atomically redirects the column DMA to the new buffer with a single register write.
 
 ### Bit remapping
 
-`remap32()` corrects for some PCB wiring order compromises by reversing the last 4 bits of each byte in the row. It runs once when the framebuffer is set to separate it from scanning logic. .
+`remap32()` corrects for some PCB wiring order compromises by reversing the last 4 bits of each byte in the row. It runs once when the framebuffer is set to separate it from scanning logic.
 
 ## File structure
 
@@ -58,21 +58,14 @@ matrix = LEDMatrix(data_sm, row_sm)
 matrix.start(initial_framebuffer)
 
 while True:
-    matrix.refill()
-    # logic to refill the framebuffer goes here. 
+    # Write a new frame to the back buffer, then swap:
+    matrix.set_framebuffer(new_frame)
+    matrix.swap()
 ```
 
-The framebuffer is a list of 8 integers, each 32 bits wide (one per row). Update the display at any time with:
-
-```python
-matrix.set_framebuffer(new_frame)
-```
-
-The new frame takes effect on the next scan cycle. Both `set_framebuffer()` and `refill()` run in the main loop.
+The framebuffer is a list of 8 integers, each 32 bits wide (one per row). `set_framebuffer()` writes to the back buffer; `swap()` makes it visible by redirecting DMA.
 
 ## Future work
 
 - **Serial frame streaming:**
-- **DMA FIFO feeding:**
-- **Double buffering:** 
 - **Brightness control:**
