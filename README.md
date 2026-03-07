@@ -37,17 +37,33 @@ Two DMA channels continuously feed the PIO TX FIFOs from a 32-byte-aligned frame
 
 `remap32()` corrects for some PCB wiring order compromises by reversing the last 4 bits of each byte in the row. It runs once when the framebuffer is set to separate it from scanning logic.
 
+## BLE control
+
+The firmware advertises over BLE as `LEDMatrix` and exposes a GATT service for remote frame updates.
+
+| Characteristic | UUID | Direction | Description |
+|---|---|---|---|
+| Frame RX | `2b2b2b2b-...` | Write | 32 bytes — 8 × uint32 LE, one per row |
+| Status TX | `3b3b3b3b-...` | Notify | 4 bytes: connected flag, frame count, error code, reserved |
+
+Send a 32-byte frame to the RX characteristic to update the display. If no client is connected, a fallback animation runs automatically.
+
 ## File structure
 
 ```
-main.py          Entry point — creates SMs, starts display, runs main loop
+main.py          Entry point — creates SMs, starts display, runs async tasks
 lib/
   constants.py   Pin assignments, PIO frequency, test patterns
   util.py        PIO programs, remap32(), state machine creation
-  matrix.py      LEDMatrix class — framebuffer management and FIFO refill
+  matrix.py      LEDMatrix class — framebuffer management and DMA swap
+  ble.py         BLE service registration and async task handlers
 ```
 
 ## Usage
+
+The display starts automatically on boot. Connect to `LEDMatrix` over BLE and write a 32-byte frame to update it.
+
+For direct use without BLE:
 
 ```python
 from util import create_state_machines
@@ -57,15 +73,9 @@ data_sm, row_sm = create_state_machines()
 matrix = LEDMatrix(data_sm, row_sm)
 matrix.start(initial_framebuffer)
 
-while True:
-    # Write a new frame to the back buffer, then swap:
-    matrix.set_framebuffer(new_frame)
-    matrix.swap()
+# Write a new frame to the back buffer, then swap:
+matrix.set_framebuffer(new_frame)
+matrix.swap()
 ```
 
 The framebuffer is a list of 8 integers, each 32 bits wide (one per row). `set_framebuffer()` writes to the back buffer; `swap()` makes it visible by redirecting DMA.
-
-## Future work
-
-- **Serial frame streaming:**
-- **Brightness control:**
