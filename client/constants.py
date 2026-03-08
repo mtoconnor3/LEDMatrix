@@ -1,0 +1,8 @@
+DEVICE_NAME = "LEDMatrix"
+
+SERVICE_UUID = "1b1b1b1b-1b1b-1b1b-1b1b-1b1b1b1b1b1b"
+FRAME_RX_UUID = "2b2b2b2b-2b2b-2b2b-2b2b-2b2b2b2b2b2b"
+STATUS_TX_UUID = "3b3b3b3b-3b3b-3b3b-3b3b-3b3b3b3b3b3b"
+
+ROWS = 8
+COLS = 32
