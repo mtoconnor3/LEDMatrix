@@ -31,7 +31,7 @@ def _alloc_aligned(count, alignment=32):
 
 
 class LEDMatrix:
-    """DMA-driven double-buffered 32×8 LED matrix controller.
+    """DMA-driven double-buffered 32x8 LED matrix controller.
 
     Two DMA channels continuously feed the PIO TX FIFOs using ring-wrapped
     reads over 32-byte (8-word) aligned buffers.  The CPU never touches the
@@ -123,12 +123,18 @@ class LEDMatrix:
     def swap(self):
         """Make the back buffer visible.
 
-        Atomically redirects the column DMA read address to the other
-        buffer.  The old front buffer becomes the new back buffer.
+        Copies the back buffer into the front buffer while PIO and DMA
+        continue running uninterrupted.  Each 32-bit ``mem32`` write is a
+        single atomic bus transaction, so DMA always reads a complete old
+        or new value per row — never a partial update.
+
+        The only possible artifact is one scan cycle (~1 ms) where some
+        rows show old data and others show new, which is imperceptible
+        for animations and scrolling text.
         """
-        self._front, self._back = self._back, self._front
-        ch = self._col_dma.channel
-        mem32[DMA_BASE + ch * DMA_CH_STRIDE] = self._front
+        src, dst = self._back, self._front
+        for i in range(8):
+            mem32[dst + i * 4] = mem32[src + i * 4]
 
     def close(self):
         """Stop display and release DMA channels."""

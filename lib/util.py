@@ -31,8 +31,8 @@ def _shift_out():
 def _row_ctrl():
     """Cycle row enables in lockstep with data SM."""
     wrap_target()
-    mov(pins, invert(null))            # All rows disabled
-    pull(block)                        # Get row pattern (stalls if FIFO empty — safe, rows off)
+    pull(block)                        # Get row pattern (stalls if FIFO empty — last row stays lit)
+    mov(pins, invert(null))            # All rows disabled (shift register latches still hold data)
     irq(1)                             # Signal data SM: safe to shift
     wait(1, irq, 0)                    # Wait for data SM: latch done
     out(pins, 8)                       # Enable one row
