@@ -51,15 +51,27 @@ Send a 32-byte frame to the RX characteristic to update the display. If no clien
 ## File structure
 
 ```
-main.py          Entry point — creates SMs, starts display, runs async tasks
-lib/
+firmware/
+  main.py        Entry point — creates SMs, starts display, runs async tasks
   constants.py   Pin assignments, PIO frequency, test patterns
   util.py        PIO programs, remap32(), state machine creation
   matrix.py      LEDMatrix class — framebuffer management and DMA swap
   ble.py         BLE service registration and async task handlers
+
+client/
+  __init__.py    Public API re-exports
+  client.py      LEDMatrixClient — BLE connect/disconnect, send_frame, read_status
+  frames.py      Frame helpers — bitmap_to_frame, frame_to_bitmap, print_frame
+  text.py        Text rendering — text_to_columns, preview_text, scroll_text
+  animations.py  Animations — blink, row_scan, column_scan, scroll_frame_left
+  font.py        8×8 bitmap font (printable ASCII)
+  constants.py   UUIDs, ROWS, COLS
+
+notebooks/
+  client_demo.ipynb   Demonstrates the client library end-to-end
 ```
 
-## Usage
+## Firmware usage
 
 The display starts automatically on boot. Connect to `LEDMatrix` over BLE and write a 32-byte frame to update it.
 
@@ -79,3 +91,33 @@ matrix.swap()
 ```
 
 The framebuffer is a list of 8 integers, each 32 bits wide (one per row). `set_framebuffer()` writes to the back buffer; `swap()` makes it visible by redirecting DMA.
+
+## Client usage
+
+The `client` package provides a Python BLE client for use on any host machine (macOS, Linux, Windows). Install dependencies with `pip install bleak`.
+
+```python
+import asyncio
+from client import LEDMatrixClient, bitmap_to_frame, scroll_text, animations
+
+async def main():
+    async with await LEDMatrixClient.connect() as matrix:
+        # Send a raw frame (8 × uint32, one per row)
+        await matrix.send_frame([0xFFFFFFFF] * 8)
+
+        # Or build one from a 2D bitmap
+        bitmap = [[0] * 32 for _ in range(8)]
+        bitmap[3][10:22] = [1] * 12  # horizontal bar
+        await matrix.send_frame(bitmap_to_frame(bitmap))
+
+        # Scroll text across the display
+        await scroll_text(matrix, "HELLO WORLD", delay=0.05)
+
+        # Built-in animations
+        await animations.row_scan(matrix)
+        await animations.blink(matrix, [0xFFFFFFFF] * 8, times=3)
+
+asyncio.run(main())
+```
+
+See `notebooks/client_demo.ipynb` for an interactive walkthrough.
