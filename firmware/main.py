@@ -1,8 +1,8 @@
 import asyncio
-import random
 from util import create_state_machines
 from matrix import LEDMatrix
 from ble import DisplayState, register_services, peripheral_task, rx_handler_task
+from demo import run_demo
 import constants
 
 
@@ -20,19 +20,7 @@ async def frame_applicator_task(matrix, state):
 
 async def demo_task(matrix, state):
     """Fallback animation when no BLE client is connected."""
-    fb = list(constants.TEST_PATTERN_ALL_ON)
-    matrix.set_framebuffer(fb)
-    matrix.swap()
-
-    while True:
-        if state.connected:
-            await asyncio.sleep_ms(500)
-            continue
-
-        fb = [a ^ random.getrandbits(32) for a in fb]
-        matrix.set_framebuffer(fb)
-        matrix.swap()
-        await asyncio.sleep_ms(100)
+    await run_demo(matrix, state)
 
 
 async def main():
