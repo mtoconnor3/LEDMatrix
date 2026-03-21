@@ -1,7 +1,7 @@
 import asyncio
 from util import create_state_machines
 from matrix import LEDMatrix
-from ble import DisplayState, register_services, peripheral_task, rx_handler_task
+from ble import DisplayState, register_services, peripheral_task, rx_handler_task, brightness_rx_task
 from demo import run_demo
 import constants
 
@@ -18,6 +18,14 @@ async def frame_applicator_task(matrix, state):
             matrix.swap()
 
 
+async def brightness_applicator_task(matrix, state):
+    """Wait for brightness changes from BLE and apply them to the matrix."""
+    while True:
+        await state.brightness_event.wait()
+        state.brightness_event.clear()
+        matrix.set_brightness(state.brightness)
+
+
 async def demo_task(matrix, state):
     """Fallback animation when no BLE client is connected."""
     await run_demo(matrix, state)
@@ -31,13 +39,15 @@ async def main():
 
     # BLE setup
     state = DisplayState()
-    rx_char, tx_char = register_services()
+    rx_char, tx_char, brightness_char = register_services()
 
     await asyncio.gather(
         peripheral_task(state, rx_char, tx_char),
         rx_handler_task(state, rx_char, tx_char),
         frame_applicator_task(matrix, state),
         demo_task(matrix, state),
+        brightness_rx_task(state, brightness_char, tx_char),
+        brightness_applicator_task(matrix, state),
     )
 
 

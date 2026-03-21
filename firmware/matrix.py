@@ -51,8 +51,9 @@ class LEDMatrix:
 
         # Row-enable patterns (static, single buffer)
         self._row_raw, self._row_addr = _alloc_aligned(8)
+        self._brightness = 255
         for i in range(8):
-            mem32[self._row_addr + i * 4] = ~(1 << i) & 0xFF
+            mem32[self._row_addr + i * 4] = (255 << 8) | (~(1 << i) & 0xFF)
 
         # Claim two DMA channels
         self._col_dma = rp2.DMA()
@@ -141,6 +142,28 @@ class LEDMatrix:
         self.stop()
         self._col_dma.close()
         self._row_dma.close()
+
+    def set_brightness(self, value):
+        """Set global display brightness.
+
+        value must be in [0, 255]; values are clamped to this range.
+
+        Rewrites the 8-word row DMA buffer. The sequential mem32 writes mean
+        at most one scan frame (~1 ms) may show a mix of old and new brightness,
+        which is imperceptible. Same trade-off as swap().
+
+        Row words are NOT passed through remap32() — remap32 applies only to
+        column data. Row words use the native active-low mask format.
+        """
+        value = max(0, min(255, value))
+        self._brightness = value
+        if value == 0:
+            # All rows disabled. Counter set to 1 (not 0) to avoid PIO hang.
+            for i in range(8):
+                mem32[self._row_addr + i * 4] = (1 << 8) | 0xFF
+        else:
+            for i in range(8):
+                mem32[self._row_addr + i * 4] = (value << 8) | (~(1 << i) & 0xFF)
 
     # ── internals ─────────────────────────────────────────────────
 

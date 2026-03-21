@@ -1,6 +1,6 @@
 import struct
 from bleak import BleakClient, BleakScanner
-from .constants import DEVICE_NAME, FRAME_RX_UUID, STATUS_TX_UUID
+from .constants import DEVICE_NAME, FRAME_RX_UUID, STATUS_TX_UUID, BRIGHTNESS_RX_UUID
 from .frames import frame_to_bytes
 
 
@@ -58,24 +58,32 @@ class LEDMatrixClient:
         """Send 8 uint32 row values to the display."""
         await self._client.write_gatt_char(FRAME_RX_UUID, frame_to_bytes(frame))
 
+    async def set_brightness(self, level: int):
+        """Set display brightness. level must be 0–255 (0 = off, 255 = full)."""
+        if not 0 <= level <= 255:
+            raise ValueError(f"brightness level must be 0-255, got {level}")
+        await self._client.write_gatt_char(BRIGHTNESS_RX_UUID, bytes([level]))
+
     async def read_status(self) -> dict:
         """Read and parse the status characteristic."""
         data = await self._client.read_gatt_char(STATUS_TX_UUID)
-        connected, frame_count, last_error, _ = struct.unpack("<BBBB", data)
+        connected, frame_count, last_error, brightness = struct.unpack("<BBBB", data)
         return {
             "connected": bool(connected),
             "frame_count": frame_count,
             "last_error": last_error,
+            "brightness": brightness,
         }
 
     async def subscribe_status(self, callback):
-        """Subscribe to status notifications. callback(sender, data) receives raw bytes."""
+        """Subscribe to status notifications. callback receives parsed dict."""
         def _cb(sender, data):
-            connected, frame_count, last_error, _ = struct.unpack("<BBBB", data)
+            connected, frame_count, last_error, brightness = struct.unpack("<BBBB", data)
             callback({
                 "connected": bool(connected),
                 "frame_count": frame_count,
                 "last_error": last_error,
+                "brightness": brightness,
             })
         await self._client.start_notify(STATUS_TX_UUID, _cb)
 

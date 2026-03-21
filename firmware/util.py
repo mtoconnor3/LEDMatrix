@@ -35,10 +35,10 @@ def _row_ctrl():
     mov(pins, invert(null))            # All rows disabled (shift register latches still hold data)
     irq(1)                             # Signal data SM: safe to shift
     wait(1, irq, 0)                    # Wait for data SM: latch done
-    out(pins, 8)                       # Enable one row
-    set(x, 7)                          # Display delay counter
+    out(pins, 8)                   # Enable one row (bits [7:0])
+    mov(x, osr)                    # SHIFT_RIGHT: out(pins,8) shifted low byte out, counter now in bits [7:0]
     label("delay")
-    jmp(x_dec, "delay")        [31]    # 8 × 32 = 256 cycles ≈ 128 µs at 2 MHz
+    jmp(x_dec, "delay")            # Count down on-time (~0.5 µs/cycle at 2 MHz)
     wrap()
 
 

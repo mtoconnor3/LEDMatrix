@@ -7,6 +7,7 @@ import struct
 _MATRIX_SERVICE_UUID = bluetooth.UUID("1b1b1b1b-1b1b-1b1b-1b1b-1b1b1b1b1b1b")
 _FRAME_RX_UUID = bluetooth.UUID("2b2b2b2b-2b2b-2b2b-2b2b-2b2b2b2b2b2b")
 _STATUS_TX_UUID = bluetooth.UUID("3b3b3b3b-3b3b-3b3b-3b3b-3b3b3b3b3b3b")
+_BRIGHTNESS_RX_UUID = bluetooth.UUID("4b4b4b4b-4b4b-4b4b-4b4b-4b4b4b4b4b4b")
 
 _ADV_INTERVAL_US = 250_000
 _ADV_NAME = "LEDMatrix"
@@ -26,6 +27,8 @@ class DisplayState:
         self.frame_count = 0
         self.last_error = _ERR_NONE
         self.frame_event = asyncio.Event()
+        self.brightness = 255
+        self.brightness_event = asyncio.Event()
 
 
 def _parse_frame(data):
@@ -42,13 +45,13 @@ def _update_status(tx_char, state):
         0x01 if state.connected else 0x00,
         state.frame_count & 0xFF,
         state.last_error,
-        0x00,
+        state.brightness & 0xFF,
     )
     tx_char.write(status, send_update=True)
 
 
 def register_services():
-    """Create and register the GATT service. Returns (rx_char, tx_char)."""
+    """Create and register the GATT service. Returns (rx_char, tx_char, brightness_char)."""
     aioble.config(mtu=_DESIRED_MTU)
 
     service = aioble.Service(_MATRIX_SERVICE_UUID)
@@ -69,8 +72,16 @@ def register_services():
         initial=b"\x00\x00\x00\x00",
     )
 
+    brightness_char = aioble.BufferedCharacteristic(
+        service,
+        _BRIGHTNESS_RX_UUID,
+        write=True,
+        max_len=1,
+        capture=True,
+    )
+
     aioble.register_services(service)
-    return rx_char, tx_char
+    return rx_char, tx_char, brightness_char
 
 
 async def peripheral_task(state, rx_char, tx_char):
@@ -116,4 +127,23 @@ async def rx_handler_task(state, rx_char, tx_char):
             state.last_error = _ERR_BAD_LENGTH
             print("BLE: bad frame length:", len(data))
 
+        _update_status(tx_char, state)
+
+
+async def brightness_rx_task(state, brightness_char, tx_char):
+    """Wait for writes on the brightness characteristic and update display state."""
+    while True:
+        try:
+            _, data = await brightness_char.written(timeout_ms=1000)
+        except asyncio.TimeoutError:
+            continue
+
+        if len(data) != 1:
+            state.last_error = _ERR_BAD_LENGTH
+            _update_status(tx_char, state)
+            continue
+
+        state.brightness = data[0]
+        state.last_error = _ERR_NONE
+        state.brightness_event.set()
         _update_status(tx_char, state)
